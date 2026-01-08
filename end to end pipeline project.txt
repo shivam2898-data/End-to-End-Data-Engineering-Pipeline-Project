@@ -1,0 +1,93 @@
+step 1: connect to host
+ssh -i kakfaserver.pem hadoop@ec2-15-207-87-4.ap-south-1.compute.amazonaws.com
+
+step 2: download archive files
+wget https://data.gharchive.org/2015-01-01-{0..23}.json.gz
+
+step 3: load into S3 bucket
+aws s3 cp . s3://emr-s3-redshift/gharchive/2015-01-01/ --recursive --exclude "*" --include "*.json"
+
+step 4: create python file and write sprak script
+
+touch emr_s3.py
+nano emr_s3.py
+
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, to_timestamp
+
+# ---------------------------------------
+# Spark Session
+# ---------------------------------------
+spark = SparkSession.builder \
+    .appName("Final_Spark_JDBC_Redshift_GitHub_Events") \
+    .getOrCreate()
+
+# ---------------------------------------
+# Read GitHub Events JSON from S3
+# ---------------------------------------
+s3_input_path = "s3a://emr-s3-redshift/github_events/"
+df = spark.read.json(s3_input_path)
+
+print("Source schema:")
+df.printSchema()
+
+print("Source record count:", df.count())
+
+# ---------------------------------------
+# Transform to match Redshift table
+# ---------------------------------------
+final_df = df.select(
+    col("id").cast("bigint").alias("id"),
+    col("type").cast("string").alias("type"),
+    col("actor_login").cast("string").alias("actor_login"),
+    col("repo_name").cast("string").alias("repo_name"),
+    to_timestamp(col("created_at")).alias("created_at"),
+    col("payload").cast("string").alias("payload"),  # JSON string → SUPER
+    col("actor").cast("string").alias("actor"),      # JSON string → SUPER
+    col("repo").cast("string").alias("repo")         # JSON string → SUPER
+)
+
+# ---------------------------------------
+# Filter bad records
+# ---------------------------------------
+clean_df = final_df.filter(
+    col("id").isNotNull() &
+    col("type").isNotNull() &
+    col("created_at").isNotNull()
+)
+
+print("Clean record count:", clean_df.count())
+
+# ---------------------------------------
+# Redshift JDBC details
+# ---------------------------------------
+jdbc_url = (
+    "jdbc:redshift://"
+    "emr-wrkgrp.246233007891.ap-south-1.redshift-serverless.amazonaws.com:5439/dev"
+)
+
+jdbc_properties = {
+    "user": "admin",
+    "password": "Shivam2898",
+    "driver": "com.amazon.redshift.jdbc42.Driver",
+    "batchsize": "500"
+}
+
+# ---------------------------------------
+# Write to Redshift (NO COPY COMMAND)
+# ---------------------------------------
+clean_df.write \
+    .format("jdbc") \
+    .option("url", jdbc_url) \
+    .option("dbtable", "public.github_events") \
+    .option("user", jdbc_properties["user"]) \
+    .option("password", jdbc_properties["password"]) \
+    .option("driver", jdbc_properties["driver"]) \
+    .option("batchsize", jdbc_properties["batchsize"]) \
+    .mode("append") \
+    .save()
+
+print("✅ Data successfully inserted into Redshift")
+
+spark.stop()
