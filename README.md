@@ -37,3 +37,5 @@ Loaded data into Amazon Redshift directly from Spark using JDBC without executin
 <img width="1920" height="1080" alt="Screenshot 2026-01-08 200546" src="https://github.com/user-attachments/assets/16eb224d-01ce-4f96-be30-a887bc797cbb" />
 ### Step 11: Data Validation
 Validated the loaded data by running analytical queries in Amazon Redshift.  
+![WhatsApp Image 2026-01-08 at 8 43 29 PM](https://github.com/user-attachments/assets/df82fe9f-be8e-4523-b79b-0335ce2ab977)
+
